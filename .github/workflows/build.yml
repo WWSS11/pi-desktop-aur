@@ -24,11 +24,18 @@ env:
   UPSTREAM_BRANCH: main
   CARGO_BUILD_JOBS: "3"
   CARGO_INCREMENTAL: "0"
-  # Identity for the commits this workflow pushes. Must be the documented
-  # Actions bot, not a hand-made "ci@users.noreply.github.com" placeholder:
-  # GitHub's noreply scheme is <username>@users.noreply.github.com, so a made-up
-  # local part silently attributes the commits to whichever real account owns
-  # that name ("ci" is a real account).
+  # Identities for the commits this workflow pushes. The maintainer is the
+  # author (so the repository's contributor list shows the human who owns the
+  # automation); the committer is the documented Actions bot, so the history
+  # records that a workflow produced the change.
+  #
+  # The bot address must be this exact one. GitHub's noreply scheme is
+  # <username>@users.noreply.github.com, so an invented local part silently
+  # attributes the commits to whichever real account owns that name (the
+  # "ci@users.noreply.github.com" placeholder inherited from codeg-aur belongs
+  # to a real, unrelated account named `ci`).
+  CI_AUTHOR_NAME: WWSS11
+  CI_AUTHOR_EMAIL: 3244364961@qq.com
   CI_COMMIT_NAME: 'github-actions[bot]'
   CI_COMMIT_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
 
@@ -257,7 +264,9 @@ jobs:
           git config user.name "$CI_COMMIT_NAME"
           git config user.email "$CI_COMMIT_EMAIL"
           git add -A
-          git commit -m "Update repo database to ${{ steps.pkg.outputs.ver }} [skip ci]" || echo "nothing to commit"
+          git commit --author="$CI_AUTHOR_NAME <$CI_AUTHOR_EMAIL>" \
+            -m "Update repo database to ${{ steps.pkg.outputs.ver }} [skip ci]" \
+            || echo "nothing to commit"
           git push origin gh-pages
 
       - name: Commit bumped pi-desktop-bin PKGBUILD to main
@@ -282,5 +291,7 @@ jobs:
           git config user.name "$CI_COMMIT_NAME"
           git config user.email "$CI_COMMIT_EMAIL"
           git add pi-desktop-bin/PKGBUILD pi-desktop-bin/.SRCINFO
-          git commit -m "pi-desktop-bin: bump to ${{ steps.pkg.outputs.ver }} [skip ci]" || echo "nothing to commit"
+          git commit --author="$CI_AUTHOR_NAME <$CI_AUTHOR_EMAIL>" \
+            -m "pi-desktop-bin: bump to ${{ steps.pkg.outputs.ver }} [skip ci]" \
+            || echo "nothing to commit"
           git push origin main
