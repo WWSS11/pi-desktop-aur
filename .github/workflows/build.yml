@@ -127,6 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           sed -i 's/ debug / !debug /' /etc/makepkg.conf
+          printf 'PACKAGER="WWSS11 <3244364961@qq.com>"\n' >> /etc/makepkg.conf
           cd repo/pi-desktop-git
           su builder -c "CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} CARGO_INCREMENTAL=0 makepkg -f --noconfirm --nodeps"
           rm -f ./*-debug-*.pkg.tar.zst
@@ -163,6 +164,47 @@ jobs:
           sed -i "s/^sha256sums=.*/sha256sums=('${{ steps.pkg.outputs.sha256 }}')/" PKGBUILD
           su builder -c "makepkg -f --noconfirm --nodeps"
           ls -la
+
+      # Regression net for the packaging itself: an upstream refactor that
+      # renames the electron-builder output or moves a bundled resource fails
+      # here instead of shipping a package that cannot start.
+      - name: Verify packaged application contents
+        run: |
+          set -euo pipefail
+          PKG=$(ls "$GITHUB_WORKSPACE"/repo/pi-desktop-bin/pi-desktop-bin-*.pkg.tar.zst | head -1)
+          WORK=$(mktemp -d)
+          bsdtar -xf "$PKG" -C "$WORK"
+          echo "--- /opt/PI-Desktop ---"
+          ls -la "$WORK/opt/PI-Desktop"
+          echo "--- resources ---"
+          ls -la "$WORK/opt/PI-Desktop/resources"
+          for f in \
+            opt/PI-Desktop/pi-desktop \
+            opt/PI-Desktop/chrome-sandbox \
+            opt/PI-Desktop/resources/app.asar \
+            opt/PI-Desktop/resources/bin/pi-desktop-host-core \
+            opt/PI-Desktop/resources/agent-runtime/sidecar.js \
+            opt/PI-Desktop/resources/models.dev/api.json \
+            opt/PI-Desktop/resources/skills \
+            opt/PI-Desktop/resources/plugins \
+            opt/PI-Desktop/resources/tray-icon.png \
+            usr/share/applications/pi-desktop.desktop \
+            usr/share/icons/hicolor/512x512/apps/pi-desktop.png \
+            usr/share/icons/hicolor/1024x1024/apps/pi-desktop.png \
+            usr/share/licenses/pi-desktop-git/LICENSE ; do
+            if [ ! -e "$WORK/$f" ]; then
+              echo "MISSING: $f"
+              exit 1
+            fi
+            echo "ok: $f"
+          done
+          test -x "$WORK/opt/PI-Desktop/pi-desktop"
+          test "$(readlink "$WORK/usr/bin/pi-desktop")" = "/opt/PI-Desktop/pi-desktop"
+          test "$(stat -c '%a' "$WORK/opt/PI-Desktop/chrome-sandbox")" = "4755"
+          grep -Fx 'Icon=pi-desktop' "$WORK/usr/share/applications/pi-desktop.desktop"
+          grep -Fx 'StartupWMClass=pi-desktop' "$WORK/usr/share/applications/pi-desktop.desktop"
+          rm -rf "$WORK"
+          echo "package layout verified"
 
       - name: Generate pacman repository database
         run: |
