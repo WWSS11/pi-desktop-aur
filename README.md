@@ -88,14 +88,3 @@ makepkg -si
 ## 与上游发行版的区别
 
 上游提供的 AppImage / deb / rpm 自带整套 Electron 运行时。本仓库的包同样捆绑 Electron（这是 Electron 应用的标准做法），但在 Arch 容器内编译 `host-core` 与前端，并按 Arch 的目录规范安装（`/opt/PI-Desktop` + `/usr/share/applications` + hicolor 图标），因此能直接被 `pacman` 跟踪、升级和卸载。
-
-## 维护备忘
-
-- 自动化提交的身份由工作流 `env` 里的 `CI_AUTHOR_*` / `CI_COMMIT_*` 统一定义：author 是 WWSS11，committer 是 `github-actions[bot]`（id `41898282`）。
-  > ⚠️ 不要自造 `<name>@users.noreply.github.com` 这类邮箱。GitHub 的 noreply 方案就是 `<用户名>@users.noreply.github.com`，所以随手编的本地部分会**被解析成同名的真实账号**（本项目最初照搬 codeg-aur 的 `ci@users.noreply.github.com`，结果每次自动化提交都记到了真实账号 `ci` 名下，并把它算成了贡献者）。
-- 2026-09-24 曾重写 main / gh-pages 的历史以修正上述错误归属，重写前的仓库快照保存在 `~/Project/pi-desktop-aur-pre-rewrite-*.bundle`（`git clone <bundle> <dir>` 即可还原）。
-- 包体积约 120 MB，超过 GitHub 单文件 100 MiB 的 git push 限制，所以包体只放在 Release，`gh-pages` 只放数据库与 `.last-built-sha` 标记。
-- 构建在 `archlinux/archlinux:latest` 容器中进行；容器内安装官方 Node.js 24 并覆盖 `/usr/local/bin`（Arch 只提供 Node 26，而上游 Linux 发布线用的是 24）。
-- 上游 `package.json` 的 `packageManager` 字段决定 pnpm 版本，`prepare()` 会在 `$srcdir` 内安装该版本，保证与上游 lockfile 一致。
-- `scripts/verify-package.sh` 是本仓库的“测试”：它断言安装后的布局（`/opt/PI-Desktop` 内容、启动器、desktop 文件、图标、许可证链接、`chrome-sandbox` 的 4755 位）。上游若改变 electron-builder 输出目录或移动打包资源，它会先于用户发现。
-- 遇到“构建成功但用户装不上”类问题时，手动跑一次 `verify` 工作流即可定位到具体环节（数据库 / 校验和 / 布局 / 镜像）。
