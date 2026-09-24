@@ -86,7 +86,7 @@ jobs:
       - name: Verify runtime dependencies resolve
         run: |
           set -euo pipefail
-          deps=$(sed -n 's/^[[:space:]]*depends = //p' repo/pi-desktop-git/.SRCINFO | sort -u | tr '\n' ' ')
+          deps=$(sed -n 's/^[[:space:]]*\(depends\|makedepends\) = //p' repo/pi-desktop-git/.SRCINFO | sort -u | tr '\n' ' ')
           echo "runtime deps: ${deps}"
           # `pacman -Sp` performs full dependency resolution without installing
           # anything, so a wrong package name fails here instead of shipping.

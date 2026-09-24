@@ -51,11 +51,11 @@ depends=(
   'brotli'
 )
 makedepends=(
-  'base-devel'
   'git'
   'rust'
+  'nodejs'
+  'npm'
   'python'
-  'libarchive'
 )
 conflicts=('pi-desktop' 'pi-desktop-bin')
 provides=('pi-desktop')

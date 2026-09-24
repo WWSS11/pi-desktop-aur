@@ -62,7 +62,7 @@ cd pi-desktop-aur/pi-desktop-git
 makepkg -si
 ```
 
-需要 Node.js >= 22.19（提供 `node`/`npm`），其余依赖由 `makedepends` 声明。首次编译约 20-40 分钟（Rust + 前端 + Electron 打包），之后增量编译很快。
+需要 Node.js >= 22.19（`nodejs` / `npm` 已写入 `makedepends`），其余依赖由 `makedepends` 声明，`makepkg -si` 会自动安装。首次编译约 10-30 分钟（Rust + 前端 + Electron 打包），之后增量编译很快。
 
 ## 自动化说明
 
@@ -91,6 +91,8 @@ makepkg -si
 
 ## 维护备忘
 
-- 包体积约 100 MB，超过 GitHub 单文件 100 MiB 的 git push 限制，所以包体只放在 Release，`gh-pages` 只放数据库与 `.last-built-sha` 标记。
-- 构建在 `archlinux/archlinux:latest` 容器中进行；容器内使用官方 Node.js 24（Arch 只提供 Node 26）。
+- 包体积约 120 MB，超过 GitHub 单文件 100 MiB 的 git push 限制，所以包体只放在 Release，`gh-pages` 只放数据库与 `.last-built-sha` 标记。
+- 构建在 `archlinux/archlinux:latest` 容器中进行；容器内安装官方 Node.js 24 并覆盖 `/usr/local/bin`（Arch 只提供 Node 26，而上游 Linux 发布线用的是 24）。
 - 上游 `package.json` 的 `packageManager` 字段决定 pnpm 版本，`prepare()` 会在 `$srcdir` 内安装该版本，保证与上游 lockfile 一致。
+- `scripts/verify-package.sh` 是本仓库的“测试”：它断言安装后的布局（`/opt/PI-Desktop` 内容、启动器、desktop 文件、图标、许可证链接、`chrome-sandbox` 的 4755 位）。上游若改变 electron-builder 输出目录或移动打包资源，它会先于用户发现。
+- 遇到“构建成功但用户装不上”类问题时，手动跑一次 `verify` 工作流即可定位到具体环节（数据库 / 校验和 / 布局 / 镜像）。
