@@ -1,0 +1,95 @@
+name: verify
+
+# End-to-end check of the published package repository, from the exact URL a
+# user puts in /etc/pacman.conf: fetch the database, resolve the package it
+# references, download it, verify its checksum and its installed layout.
+#
+# This is what catches "the workflow said success but the repo is broken"
+# (stale mirror, half-uploaded release, mangled package).
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: pacman Server URL to verify
+        type: string
+        default: https://github.com/WWSS11/pi-desktop-aur/releases/latest/download
+  schedule:
+    - cron: '37 4 * * 0'
+
+permissions:
+  contents: read
+
+env:
+  MIRROR_URL: https://wwss11.github.io/pi-desktop-aur/x86_64
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: archlinux/archlinux:latest
+      options: --user root
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git curl libarchive zstd
+
+      - uses: actions/checkout@v4
+
+      - name: Fetch the repository database
+        env:
+          SERVER: ${{ inputs.server || 'https://github.com/WWSS11/pi-desktop-aur/releases/latest/download' }}
+        run: |
+          set -euo pipefail
+          echo "verifying ${SERVER}"
+          curl -fsSL --retry 3 -o pi-desktop-aur.db "${SERVER}/pi-desktop-aur.db"
+          curl -fsSL --retry 3 -o pi-desktop-aur.files "${SERVER}/pi-desktop-aur.files"
+          file pi-desktop-aur.db
+          bsdtar -tf pi-desktop-aur.db
+
+      - name: Resolve the package the database points at
+        id: pkg
+        run: |
+          set -euo pipefail
+          entry=$(bsdtar -tf pi-desktop-aur.db | head -1)
+          echo "database entry: ${entry}"
+          bsdtar -xOf pi-desktop-aur.db "${entry}desc" > desc
+          cat desc
+          name=$(sed -n '/^%NAME%$/{n;p;}' desc)
+          filename=$(sed -n '/^%FILENAME%$/{n;p;}' desc)
+          sha=$(sed -n '/^%SHA256SUM%$/{n;p;}' desc)
+          test "$name" = "pi-desktop-bin"
+          test -n "$filename"
+          test -n "$sha"
+          echo "filename=${filename}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the package and verify its checksum
+        env:
+          SERVER: ${{ inputs.server || 'https://github.com/WWSS11/pi-desktop-aur/releases/latest/download' }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "${{ steps.pkg.outputs.filename }}" \
+            "${SERVER}/${{ steps.pkg.outputs.filename }}"
+          ls -la "${{ steps.pkg.outputs.filename }}"
+          echo "${{ steps.pkg.outputs.sha256 }}  ${{ steps.pkg.outputs.filename }}" | sha256sum -c -
+
+      - name: Show package metadata as pacman sees it
+        run: pacman -Qip "${{ steps.pkg.outputs.filename }}"
+
+      - name: Verify the installed layout
+        run: bash scripts/verify-package.sh "${{ steps.pkg.outputs.filename }}"
+
+      - name: Compare with the gh-pages mirror
+        run: |
+          set -euo pipefail
+          if ! curl -fsSL --retry 3 -o mirror.db "${MIRROR_URL}/pi-desktop-aur.db"; then
+            echo "::warning title=gh-pages mirror unreachable::${MIRROR_URL}/pi-desktop-aur.db could not be downloaded."
+            exit 0
+          fi
+          if cmp -s pi-desktop-aur.db mirror.db; then
+            echo "gh-pages mirror is identical to the release database"
+          else
+            echo "::warning title=gh-pages mirror is stale::The Pages copy of pi-desktop-aur.db differs from the one served by the Release. The mirror is only a fallback, but this means the workflow's mirror step did not run."
+            bsdtar -tf mirror.db
+          fi

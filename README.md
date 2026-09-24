@@ -70,9 +70,13 @@ makepkg -si
 - 检测到新提交时，自动在云端 Arch 容器中编译并发布：
   1. 编译 `pi-desktop-git`（`electron-vite build` + `electron-builder --linux dir`）
   2. 用该产物重新打包 `pi-desktop-bin`，同步更新其 PKGBUILD 版本号与校验和
-  3. 先创建草稿 Release 并上传全部产物（两个包 + 仓库数据库）
-  4. 全部就绪后再发布 Release，并更新 `gh-pages` 的数据库镜像
+  3. 校验包内布局（`scripts/verify-package.sh`），不合格直接中断，不会发布
+  4. 先创建草稿 Release 并上传全部产物（两个包 + 仓库数据库）
+  5. 全部就绪后再发布 Release，并更新 `gh-pages` 的数据库镜像
+- 另有 `verify` 工作流（每周 + 手动触发）会按用户实际的 `Server` URL 下载数据库与包，校验校验和与包内布局，并比对 `gh-pages` 镜像
 - 手动触发：仓库 Actions 页 → build → Run workflow（可勾选 `force` 强制重建）
+
+> 上游 `main` 是滚动目标。如果它自身处于不可构建状态（例如 `pnpm-lock.yaml` 与工作区的 `package.json` 不一致），构建会失败并且**不会发布任何包**，下一次计划任务会自动重试；已发布的历史版本不受影响。
 
 ## 包说明
 
