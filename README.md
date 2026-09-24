@@ -91,6 +91,9 @@ makepkg -si
 
 ## 维护备忘
 
+- 自动化提交的身份由工作流 `env` 里的 `CI_AUTHOR_*` / `CI_COMMIT_*` 统一定义：author 是 WWSS11，committer 是 `github-actions[bot]`（id `41898282`）。
+  > ⚠️ 不要自造 `<name>@users.noreply.github.com` 这类邮箱。GitHub 的 noreply 方案就是 `<用户名>@users.noreply.github.com`，所以随手编的本地部分会**被解析成同名的真实账号**（本项目最初照搬 codeg-aur 的 `ci@users.noreply.github.com`，结果每次自动化提交都记到了真实账号 `ci` 名下，并把它算成了贡献者）。
+- 2026-09-24 曾重写 main / gh-pages 的历史以修正上述错误归属，重写前的仓库快照保存在 `~/Project/pi-desktop-aur-pre-rewrite-*.bundle`（`git clone <bundle> <dir>` 即可还原）。
 - 包体积约 120 MB，超过 GitHub 单文件 100 MiB 的 git push 限制，所以包体只放在 Release，`gh-pages` 只放数据库与 `.last-built-sha` 标记。
 - 构建在 `archlinux/archlinux:latest` 容器中进行；容器内安装官方 Node.js 24 并覆盖 `/usr/local/bin`（Arch 只提供 Node 26，而上游 Linux 发布线用的是 24）。
 - 上游 `package.json` 的 `packageManager` 字段决定 pnpm 版本，`prepare()` 会在 `$srcdir` 内安装该版本，保证与上游 lockfile 一致。
