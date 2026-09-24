@@ -48,7 +48,7 @@ depends=(
 conflicts=('pi-desktop' 'pi-desktop-git')
 provides=('pi-desktop')
 source=("https://github.com/WWSS11/pi-desktop-aur/releases/download/v0.15.6.r3838.gd13ff26/pi-desktop-git-0.15.6.r3838.gd13ff26-1-x86_64.pkg.tar.zst")
-sha256sums=('1a403bfdce080b043b0181a560e2c5e64d2f3c875e91c08cc447ef500973576a')
+sha256sums=('b26520a64ec475411b2d402a89eedb472a729d0c7b04cdddea54d741edd645dc')
 
 package() {
   bsdtar -x -f "$srcdir"/*.pkg.tar.zst -C "$pkgdir" opt usr
