@@ -47,6 +47,26 @@ jobs:
           file pi-desktop-aur.db
           bsdtar -tf pi-desktop-aur.db
 
+      - name: Resolve the package through pacman itself
+        env:
+          SERVER: ${{ inputs.server || 'https://github.com/WWSS11/pi-desktop-aur/releases/latest/download' }}
+        run: |
+          set -euo pipefail
+          # The exact snippet the README tells users to put in /etc/pacman.conf.
+          cfg=/tmp/pi-desktop-aur.conf
+          cp /etc/pacman.conf "$cfg"
+          cat >> "$cfg" <<EOF
+
+          [pi-desktop-aur]
+          Server = ${SERVER}
+          Server = ${MIRROR_URL}
+          SigLevel = PackageOptional
+          EOF
+          pacman -Sy --config "$cfg" --noconfirm
+          pacman -Si --config "$cfg" pi-desktop-bin
+          echo "--- packages pacman would install ---"
+          pacman -Sp --config "$cfg" --print-format '%n %v' pi-desktop-bin
+
       - name: Resolve the package the database points at
         id: pkg
         run: |
