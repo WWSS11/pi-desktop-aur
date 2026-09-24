@@ -1,0 +1,175 @@
+# Maintainer: WWSS11 <3244364961@qq.com>
+# Contributor: vastsa (upstream, https://github.com/vastsa/PI-Desktop)
+#
+# Source build of PI-Desktop from upstream `main`, packaged the Arch way.
+#
+# Upstream ships an AppImage/deb/rpm that bundles its own Electron runtime. This
+# PKGBUILD instead runs the same build pipeline the upstream Linux lane uses
+# (`electron-vite build` + `electron-builder --linux dir`) and installs the
+# unpacked tree into /opt/PI-Desktop, exactly like the upstream deb/rpm do.
+#
+# A Node.js >= 22.19 runtime has to be available as `node`/`npm`. The pinned
+# pnpm from package.json `packageManager` is installed into $srcdir by prepare()
+# so the lockfile is always consumed with the toolchain upstream tests against.
+
+pkgname=pi-desktop-git
+pkgver=0.15.6
+pkgrel=1
+pkgdesc="Local-first AI coding agent desktop: Electron UI and Rust host core (git main)"
+arch=('x86_64')
+url="https://github.com/vastsa/PI-Desktop"
+license=('LGPL-3.0-only')
+options=('!lto')
+depends=(
+  'gtk3'
+  'nss'
+  'libxss'
+  'libxtst'
+  'libnotify'
+  'libsecret'
+  'libayatana-appindicator'
+  'at-spi2-core'
+  'xdg-utils'
+  'hicolor-icon-theme'
+  'libpulse'
+  'libdrm'
+  'mesa'
+  'libxkbcommon'
+  'libxcomposite'
+  'libxdamage'
+  'libxrandr'
+  'libxshmfence'
+  'libglvnd'
+  'libjpeg-turbo'
+  'libxml2'
+  'libxslt'
+  'minizip'
+  'opus'
+  'flac'
+  'libevent'
+  'c-ares'
+  'brotli'
+)
+makedepends=(
+  'base-devel'
+  'git'
+  'rust'
+  'python'
+  'libarchive'
+)
+conflicts=('pi-desktop' 'pi-desktop-bin')
+provides=('pi-desktop')
+source=("PI-Desktop::git+https://github.com/vastsa/PI-Desktop.git#branch=main")
+sha256sums=('SKIP')
+
+_pnpm_path() {
+  if [[ -x "$srcdir/pnpm-home/bin/pnpm" ]]; then
+    export PATH="$srcdir/pnpm-home/bin:$PATH"
+  fi
+}
+
+pkgver() {
+  cd "$srcdir/PI-Desktop"
+  local _ver _rev _hash
+  _ver="$(node -p "require('./package.json').version")"
+  _rev="$(git rev-list --count HEAD)"
+  _hash="$(git rev-parse --short=7 HEAD)"
+  printf '%s.r%s.g%s' "$_ver" "$_rev" "$_hash"
+}
+
+prepare() {
+  cd "$srcdir/PI-Desktop"
+  export HUSKY=0
+
+  local _want
+  _want="$(node -p "require('./package.json').packageManager.replace(/^pnpm@/,'')" 2>/dev/null || true)"
+  if [[ -n "$_want" ]]; then
+    npm install --global --prefix "$srcdir/pnpm-home" "pnpm@$_want" \
+      --no-fund --no-audit --loglevel=error >/dev/null 2>&1 || true
+  fi
+  _pnpm_path
+
+  msg "using node $(node --version) and pnpm $(pnpm --version)"
+  pnpm install --frozen-lockfile
+}
+
+build() {
+  cd "$srcdir/PI-Desktop"
+  export HUSKY=0
+  export CI=true
+  _pnpm_path
+
+  # Workspace TypeScript packages that @pi-desktop/desktop depends on.
+  pnpm --filter @pi-desktop/desktop run build:deps
+
+  # Rust host core (rusqlite is vendored, reqwest uses rustls: no system oSSL).
+  cargo build --release --locked -p host-core
+
+  # Bundled agent-runtime sidecar (esbuild).
+  pnpm --filter @pi-desktop/desktop run bundle:runtime
+
+  # Renderer + main process bundles.
+  pnpm --filter @pi-desktop/desktop run build
+
+  # Unpacked Electron tree at apps/desktop/release/linux-unpacked.
+  cd apps/desktop
+  pnpm exec electron-builder --linux dir --x64 --publish never
+}
+
+package() {
+  cd "$srcdir/PI-Desktop/apps/desktop"
+
+  local _unpacked=""
+  local _d
+  for _d in release/linux-unpacked release/linux-x64-unpacked; do
+    if [[ -x "$_d/pi-desktop" ]]; then
+      _unpacked="$_d"
+      break
+    fi
+  done
+  if [[ -z "$_unpacked" ]]; then
+    error "no unpacked Electron build found under apps/desktop/release"
+    ls -la release 2>/dev/null || true
+    exit 1
+  fi
+  msg "packaging $_unpacked"
+
+  local _appdir="$pkgdir/opt/PI-Desktop"
+  install -d "$_appdir"
+  cp -a "$_unpacked/." "$_appdir/"
+
+  # Launcher on PATH, same shape as the upstream deb/rpm.
+  install -d "$pkgdir/usr/bin"
+  ln -s /opt/PI-Desktop/pi-desktop "$pkgdir/usr/bin/pi-desktop"
+
+  # Chromium SUID sandbox helper must be root owned and setuid.
+  if [[ -e "$_appdir/chrome-sandbox" ]]; then
+    chmod 4755 "$_appdir/chrome-sandbox"
+  fi
+
+  # Icons (build/icon.png is 512x512, build/icon_1024.png is 1024x1024).
+  install -Dm644 build/icon.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/pi-desktop.png"
+  install -Dm644 build/icon_1024.png \
+    "$pkgdir/usr/share/icons/hicolor/1024x1024/apps/pi-desktop.png"
+
+  install -d "$pkgdir/usr/share/applications"
+  cat > "$pkgdir/usr/share/applications/pi-desktop.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=PI-Desktop
+GenericName=AI Coding Agent
+Comment=Local-first AI coding agent desktop client
+Exec=/usr/bin/pi-desktop %U
+Icon=pi-desktop
+Terminal=false
+Categories=Development;IDE;
+Keywords=AI;agent;coding;pi;
+StartupWMClass=pi-desktop
+StartupNotify=true
+EOF
+  chmod 644 "$pkgdir/usr/share/applications/pi-desktop.desktop"
+
+  install -Dm644 "$srcdir/PI-Desktop/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

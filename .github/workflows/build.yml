@@ -1,0 +1,260 @@
+name: build
+
+on:
+  schedule:
+    # Cheap "is upstream new?" probe every 6 hours; the heavy build only runs
+    # when vastsa/PI-Desktop `main` moved past the last built commit.
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even when the upstream commit is unchanged
+        type: boolean
+        default: false
+
+concurrency:
+  group: pi-desktop-aur-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: vastsa/PI-Desktop
+  UPSTREAM_BRANCH: main
+  CARGO_BUILD_JOBS: "3"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      needs_build: ${{ steps.check.outputs.needs_build }}
+      upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+    steps:
+      - name: Fetch last-built marker (gh-pages)
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+
+      - name: Fetch upstream commit
+        id: sha
+        run: |
+          SHA=$(curl -fsSL "https://api.github.com/repos/${UPSTREAM_REPO}/commits/${UPSTREAM_BRANCH}" \
+            | python3 -c "import json,sys;print(json.load(sys.stdin)['sha'])")
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Compare with last built
+        id: check
+        run: |
+          LAST="$(cat pages/x86_64/.last-built-sha 2>/dev/null || echo none)"
+          FORCE="${{ inputs.force }}"
+          echo "last-built=${LAST}"
+          echo "current=${{ steps.sha.outputs.sha }}"
+          if [ "$LAST" = "${{ steps.sha.outputs.sha }}" ] && [ "$FORCE" != "true" ]; then
+            echo "needs_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_build=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "upstream_sha=${{ steps.sha.outputs.sha }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.needs_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    container:
+      image: archlinux/archlinux:latest
+      options: --user root
+    steps:
+      # archlinux:latest is the minimal `base` image; git is required before
+      # actions/checkout can run inside the container.
+      - name: Install git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Install build dependencies
+        run: |
+          pacman -S --noconfirm --needed base-devel rust python libarchive sudo curl github-cli
+          pacman -Scc --noconfirm
+
+      - name: Verify runtime dependencies resolve
+        run: |
+          set -euo pipefail
+          deps=$(sed -n 's/^[[:space:]]*depends = //p' repo/pi-desktop-git/.SRCINFO | sort -u | tr '\n' ' ')
+          echo "runtime deps: ${deps}"
+          # `pacman -Sp` performs full dependency resolution without installing
+          # anything, so a wrong package name fails here instead of shipping.
+          pacman -Sp --print-format '%n' --noconfirm ${deps} >/dev/null
+          echo "all runtime dependencies resolve"
+
+      # Arch only ships Node 26, upstream builds its Linux lane on Node 24.
+      # Use the official Node 24 tarball so the toolchain matches upstream.
+      - name: Install Node.js 24
+        run: |
+          set -euo pipefail
+          NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json | python3 -c "
+          import json, sys
+          versions = [v['version'] for v in json.load(sys.stdin) if v['version'].startswith('v24.')]
+          print(versions[0])" || true)"
+          NODE_VERSION="${NODE_VERSION:-v24.12.0}"
+          echo "installing Node.js ${NODE_VERSION}"
+          curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+          install -d /opt/nodejs
+          tar -xJf /tmp/node.tar.xz -C /opt/nodejs --strip-components=1
+          rm -f /tmp/node.tar.xz
+          for bin in node npm npx; do
+            if [ -e "/opt/nodejs/bin/$bin" ]; then
+              ln -sf "/opt/nodejs/bin/$bin" "/usr/local/bin/$bin"
+            fi
+          done
+          node --version
+          npm --version
+
+      - name: Create builder user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build pi-desktop-git package
+        run: |
+          set -euo pipefail
+          sed -i 's/ debug / !debug /' /etc/makepkg.conf
+          cd repo/pi-desktop-git
+          su builder -c "CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} CARGO_INCREMENTAL=0 makepkg -f --noconfirm --nodeps"
+          rm -f ./*-debug-*.pkg.tar.zst
+          ls -la
+
+      - name: Compute version and checksum
+        id: pkg
+        run: |
+          set -euo pipefail
+          PKGFILE=$(ls "$GITHUB_WORKSPACE"/repo/pi-desktop-git/pi-desktop-git-*.pkg.tar.zst | head -1)
+          NAME=${PKGFILE##*/}
+          VERREL=${NAME#pi-desktop-git-}
+          VERREL=${VERREL%-x86_64.pkg.tar.zst}
+          REL=${VERREL##*-}
+          VER=${VERREL%-*}
+          SHA=$(sha256sum "$PKGFILE" | cut -d' ' -f1)
+          echo "ver=${VER}" >> "$GITHUB_OUTPUT"
+          echo "rel=${REL}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "gitname=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "built ${NAME} (${SHA})"
+
+      # The prebuilt package is repacked from the package we just built. CI
+      # points `source` at the local artifact so no network round trip through
+      # a GitHub Release is required; the PKGBUILD committed to main always
+      # carries the release URL for humans building it locally.
+      - name: Build pi-desktop-bin package
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/repo/pi-desktop-bin"
+          cp "$GITHUB_WORKSPACE/repo/pi-desktop-git/${{ steps.pkg.outputs.gitname }}" .
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.pkg.outputs.ver }}/" PKGBUILD
+          sed -i "s|^source=.*|source=('${{ steps.pkg.outputs.gitname }}')|" PKGBUILD
+          sed -i "s/^sha256sums=.*/sha256sums=('${{ steps.pkg.outputs.sha256 }}')/" PKGBUILD
+          su builder -c "makepkg -f --noconfirm --nodeps"
+          ls -la
+
+      - name: Generate pacman repository database
+        run: |
+          set -euo pipefail
+          STAGE="$GITHUB_WORKSPACE/x86_64"
+          mkdir -p "$STAGE"
+          rm -f "$STAGE"/pi-desktop-*.pkg.tar.zst "$STAGE"/pi-desktop-aur.*
+          cp "$GITHUB_WORKSPACE"/repo/pi-desktop-bin/pi-desktop-bin-*.pkg.tar.zst "$STAGE/"
+          cd "$STAGE"
+          repo-add -R pi-desktop-aur.db.tar.zst pi-desktop-bin-*.pkg.tar.zst
+          rm -f pi-desktop-aur.db pi-desktop-aur.files
+          zstd -d -f pi-desktop-aur.db.tar.zst -o pi-desktop-aur.db
+          zstd -d -f pi-desktop-aur.files.tar.zst -o pi-desktop-aur.files
+          echo "${{ needs.check.outputs.upstream_sha }}" > .last-built-sha
+          ls -la
+
+      # Draft first, publish last: `releases/latest/download` only starts
+      # serving the new database once every asset is in place, so a `pacman -Syu`
+      # can never observe a database referencing a package that is not there.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.pkg.outputs.ver }}"
+          STAGE="$GITHUB_WORKSPACE/x86_64"
+          BINPKG=$(ls "$GITHUB_WORKSPACE"/repo/pi-desktop-bin/pi-desktop-bin-*.pkg.tar.zst | head -1)
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists, replacing its assets"
+            gh release upload "$TAG" -R "$GITHUB_REPOSITORY" \
+              "$GITHUB_WORKSPACE/repo/pi-desktop-git/${{ steps.pkg.outputs.gitname }}" \
+              "$BINPKG" "$STAGE/pi-desktop-aur.db" "$STAGE/pi-desktop-aur.files" --clobber
+          else
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" \
+              "$GITHUB_WORKSPACE/repo/pi-desktop-git/${{ steps.pkg.outputs.gitname }}" \
+              "$BINPKG" "$STAGE/pi-desktop-aur.db" "$STAGE/pi-desktop-aur.files" \
+              --draft --title "PI-Desktop ${{ steps.pkg.outputs.ver }}" --generate-notes
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false
+          fi
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json tagName,isDraft,assets \
+            --jq '{tag: .tagName, draft: .isDraft, assets: [.assets[].name]}'
+
+      # gh-pages keeps the database mirror plus the upstream marker. The
+      # packages themselves stay in the Release: a ~100 MB .pkg.tar.zst
+      # exceeds GitHub's 100 MiB per-file limit for a git push.
+      - name: Publish repository mirror to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PAGES="$GITHUB_WORKSPACE/pages"
+          rm -rf "$PAGES"
+          if ! git clone --branch gh-pages --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PAGES"; then
+            rm -rf "$PAGES"
+            git -c init.defaultBranch=gh-pages init "$PAGES"
+            git -C "$PAGES" remote add origin \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+          mkdir -p "$PAGES/x86_64"
+          touch "$PAGES/.nojekyll"
+          cp "$GITHUB_WORKSPACE/x86_64/pi-desktop-aur.db" \
+             "$GITHUB_WORKSPACE/x86_64/pi-desktop-aur.files" \
+             "$GITHUB_WORKSPACE/x86_64/.last-built-sha" "$PAGES/x86_64/"
+          cd "$PAGES"
+          git config user.name "pi-desktop-aur CI"
+          git config user.email "ci@users.noreply.github.com"
+          git add -A
+          git commit -m "Update repo database to ${{ steps.pkg.outputs.ver }} [skip ci]" || echo "nothing to commit"
+          git push origin gh-pages
+
+      - name: Commit bumped pi-desktop-bin PKGBUILD to main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/repo/pi-desktop-bin"
+          sed -i "s|^source=.*|source=(\"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${{ steps.pkg.outputs.ver }}/${{ steps.pkg.outputs.gitname }}\")|" PKGBUILD
+          rm -f "${{ steps.pkg.outputs.gitname }}"
+          su builder -c "makepkg --printsrcinfo" > .SRCINFO
+          grep -E '^(pkgver|source|sha256sums)=' PKGBUILD
+          cat .SRCINFO
+
+          MAIN="$GITHUB_WORKSPACE/main-repo"
+          rm -rf "$MAIN"
+          git clone --branch main --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$MAIN"
+          cp PKGBUILD "$MAIN/pi-desktop-bin/PKGBUILD"
+          cp .SRCINFO "$MAIN/pi-desktop-bin/.SRCINFO"
+          cd "$MAIN"
+          git config user.name "pi-desktop-aur CI"
+          git config user.email "ci@users.noreply.github.com"
+          git add pi-desktop-bin/PKGBUILD pi-desktop-bin/.SRCINFO
+          git commit -m "pi-desktop-bin: bump to ${{ steps.pkg.outputs.ver }} [skip ci]" || echo "nothing to commit"
+          git push origin main

@@ -1,0 +1,56 @@
+# Maintainer: WWSS11 <3244364961@qq.com>
+# Contributor: vastsa (upstream, https://github.com/vastsa/PI-Desktop)
+#
+# Prebuilt PI-Desktop. The package is produced by this repository's GitHub
+# Actions workflow: it builds pi-desktop-git from upstream `main` inside an Arch
+# container and republishes the resulting package as pi-desktop-bin.
+#
+# pkgver/source/sha256sums are bumped automatically by CI on every upstream
+# commit; do not edit them by hand.
+
+pkgname=pi-desktop-bin
+pkgver=0.15.6
+pkgrel=1
+pkgdesc="Local-first AI coding agent desktop: Electron UI and Rust host core (prebuilt)"
+arch=('x86_64')
+url="https://github.com/WWSS11/pi-desktop-aur"
+license=('LGPL-3.0-only')
+depends=(
+  'gtk3'
+  'nss'
+  'libxss'
+  'libxtst'
+  'libnotify'
+  'libsecret'
+  'libayatana-appindicator'
+  'at-spi2-core'
+  'xdg-utils'
+  'hicolor-icon-theme'
+  'libpulse'
+  'libdrm'
+  'mesa'
+  'libxkbcommon'
+  'libxcomposite'
+  'libxdamage'
+  'libxrandr'
+  'libxshmfence'
+  'libglvnd'
+  'libjpeg-turbo'
+  'libxml2'
+  'libxslt'
+  'minizip'
+  'opus'
+  'flac'
+  'libevent'
+  'c-ares'
+  'brotli'
+)
+conflicts=('pi-desktop' 'pi-desktop-git')
+provides=('pi-desktop')
+source=("https://github.com/WWSS11/pi-desktop-aur/releases/download/v0.15.6/pi-desktop-git-0.15.6-1-x86_64.pkg.tar.zst")
+sha256sums=('SKIP')
+
+package() {
+  bsdtar -x -f "$srcdir"/*.pkg.tar.zst -C "$pkgdir" opt usr
+  ln -s pi-desktop-git "$pkgdir/usr/share/licenses/$pkgname"
+}

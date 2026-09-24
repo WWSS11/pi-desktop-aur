@@ -1,0 +1,10 @@
+src/
+pkg/
+PI-Desktop/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+*.db.tar.zst
+*.files.tar.zst
+pi-desktop-aur.db
+pi-desktop-aur.files
+.last-built-sha
