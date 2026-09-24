@@ -24,6 +24,13 @@ env:
   UPSTREAM_BRANCH: main
   CARGO_BUILD_JOBS: "3"
   CARGO_INCREMENTAL: "0"
+  # Identity for the commits this workflow pushes. Must be the documented
+  # Actions bot, not a hand-made "ci@users.noreply.github.com" placeholder:
+  # GitHub's noreply scheme is <username>@users.noreply.github.com, so a made-up
+  # local part silently attributes the commits to whichever real account owns
+  # that name ("ci" is a real account).
+  CI_COMMIT_NAME: 'github-actions[bot]'
+  CI_COMMIT_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
 
 jobs:
   check:
@@ -247,8 +254,8 @@ jobs:
              "$GITHUB_WORKSPACE/x86_64/pi-desktop-aur.files" \
              "$GITHUB_WORKSPACE/x86_64/.last-built-sha" "$PAGES/x86_64/"
           cd "$PAGES"
-          git config user.name "pi-desktop-aur CI"
-          git config user.email "ci@users.noreply.github.com"
+          git config user.name "$CI_COMMIT_NAME"
+          git config user.email "$CI_COMMIT_EMAIL"
           git add -A
           git commit -m "Update repo database to ${{ steps.pkg.outputs.ver }} [skip ci]" || echo "nothing to commit"
           git push origin gh-pages
@@ -272,8 +279,8 @@ jobs:
           cp PKGBUILD "$MAIN/pi-desktop-bin/PKGBUILD"
           cp .SRCINFO "$MAIN/pi-desktop-bin/.SRCINFO"
           cd "$MAIN"
-          git config user.name "pi-desktop-aur CI"
-          git config user.email "ci@users.noreply.github.com"
+          git config user.name "$CI_COMMIT_NAME"
+          git config user.email "$CI_COMMIT_EMAIL"
           git add pi-desktop-bin/PKGBUILD pi-desktop-bin/.SRCINFO
           git commit -m "pi-desktop-bin: bump to ${{ steps.pkg.outputs.ver }} [skip ci]" || echo "nothing to commit"
           git push origin main
