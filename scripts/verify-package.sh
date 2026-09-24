@@ -35,11 +35,15 @@ ls -la "$work/usr/share/applications" \
 
 status=0
 require() {
-  if [[ ! -e "$work/$1" ]]; then
+  # `-e` alone follows symlinks, so `usr/bin/pi-desktop` (an absolute link into
+  # /opt that cannot resolve inside this temporary extraction root) would look
+  # missing. Accept dangling links as present; the readlink check below is what
+  # validates the target.
+  if [[ -e "$work/$1" || -L "$work/$1" ]]; then
+    echo "ok: $1"
+  else
     echo "MISSING: $1" >&2
     status=1
-  else
-    echo "ok: $1"
   fi
 }
 
