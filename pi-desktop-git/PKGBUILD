@@ -73,6 +73,7 @@ pkgver() {
   local _ver _rev _hash
   _ver="$(node -p "require('./package.json').version")"
   _rev="$(git rev-list --count HEAD)"
+  _ver="${_ver//-/_}"  
   _hash="$(git rev-parse --short=7 HEAD)"
   printf '%s.r%s.g%s' "$_ver" "$_rev" "$_hash"
 }
