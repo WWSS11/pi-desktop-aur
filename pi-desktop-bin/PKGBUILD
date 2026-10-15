@@ -9,7 +9,7 @@
 # commit; do not edit them by hand.
 
 pkgname=pi-desktop-bin
-pkgver=0.20.1.r5204.gbde97bc
+pkgver=0.20.1.r5210.g0d235a9
 pkgrel=1
 pkgdesc="Local-first AI coding agent desktop: Electron UI and Rust host core (prebuilt)"
 arch=('x86_64')
@@ -47,8 +47,8 @@ depends=(
 )
 conflicts=('pi-desktop' 'pi-desktop-git')
 provides=('pi-desktop')
-source=("https://github.com/WWSS11/pi-desktop-aur/releases/download/v0.20.1.r5204.gbde97bc/pi-desktop-git-0.20.1.r5204.gbde97bc-1-x86_64.pkg.tar.zst")
-sha256sums=('fdf0b8b18f3ace2fff0481ed2f1b97ea19be6a1abfac2d1f3a19e7142ed12c93')
+source=("https://github.com/WWSS11/pi-desktop-aur/releases/download/v0.20.1.r5210.g0d235a9/pi-desktop-git-0.20.1.r5210.g0d235a9-1-x86_64.pkg.tar.zst")
+sha256sums=('7e550ee1f6ef528df1c9d3edbfb8701ccbeb950a2cdaaebfc2bc713f9f10bf10')
 
 package() {
   bsdtar -x -f "$srcdir"/*.pkg.tar.zst -C "$pkgdir" opt usr
