@@ -1,6 +1,6 @@
 pkgbase = pi-desktop-bin
 	pkgdesc = Local-first AI coding agent desktop: Electron UI and Rust host core (prebuilt)
-	pkgver = 0.21.0_beta.4.r5298.g589e580
+	pkgver = 0.21.0_beta.4.r5305.g87a48b9
 	pkgrel = 1
 	url = https://github.com/WWSS11/pi-desktop-aur
 	arch = x86_64
@@ -36,7 +36,7 @@ pkgbase = pi-desktop-bin
 	provides = pi-desktop
 	conflicts = pi-desktop
 	conflicts = pi-desktop-git
-	source = https://github.com/WWSS11/pi-desktop-aur/releases/download/v0.21.0_beta.4.r5298.g589e580/pi-desktop-git-0.21.0_beta.4.r5298.g589e580-1-x86_64.pkg.tar.zst
-	sha256sums = 7ded430485fa878177d2fd507acfa738f74aabc0f5e13d2129b4a41c0a52d716
+	source = https://github.com/WWSS11/pi-desktop-aur/releases/download/v0.21.0_beta.4.r5305.g87a48b9/pi-desktop-git-0.21.0_beta.4.r5305.g87a48b9-1-x86_64.pkg.tar.zst
+	sha256sums = 5e8b0e6b039bde1f6d32a9ae28a318b0bda96ca3e15f775d9819b0e7263f1c12
 
 pkgname = pi-desktop-bin
